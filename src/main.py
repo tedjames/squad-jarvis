@@ -206,7 +206,6 @@ def record_audio():
     except Exception as e:
         print(f"\nError recording audio: {str(e)}")
         print("Please check your microphone settings and permissions.")
-        time.sleep(2)
         return None
 
 def save_recording(recording):
@@ -266,6 +265,8 @@ def transcribe_and_parse_audio(audio_file):
                     Extract any grid coordinates mentioned (e.g. "A1K5K4K2").
                     So if the user says "New fire mission at foxtrot 5, 7, 2, 1", the coordinates should be "F5K7K2K1".
                     If the user says "Set target for indigo 11 k 1 3 6", the coordinates should be "I11K1K3K6".
+                    NEVER return coordinates without the K delimiter! So if the user says "Set target for kilo 2 4 1", the coordinates should NOT be "K241".
+                    If the user says "Set target for kilo 2 4 1", the coordinates SHOULD be "K2K4K1".
                     """
                 },
                 {"role": "user", "content": transcription}
@@ -336,7 +337,6 @@ def handle_voice_command(is_wake_word=False):
         elif parsed_command.intent == "fire_mission":
             return return_input_from_string(coordinates_input, description_3)
     
-    time.sleep(2)
     return None
 
 def target_loop():
@@ -466,14 +466,11 @@ def target_loop():
                                         print("\nTarget position updated!")
                                 
                                 # Only update display after a successful command
-                                time.sleep(2)  # Give time to read the update message
                                 display_status()
                         
                         # print("\n Ready for further commands...")
                         wake_word_detected = False
                         audio_stream.start()
-                    
-                    time.sleep(0.1)
                     
                 except KeyboardInterrupt:
                     print("\nQuitting...")

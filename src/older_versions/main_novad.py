@@ -21,9 +21,6 @@ import struct
 import threading
 from queue import Queue
 import keyboard
-from silero_vad import load_silero_vad, read_audio, get_speech_timestamps
-import torch
-from scipy import signal  # For resampling
 ########################################
 # Constantes                           #
 ########################################
@@ -46,12 +43,6 @@ SAMPLE_RATE = 44100
 CHANNELS = 1
 RECORDING_DURATION = 5
 WAKE_WORD = "jarvis"  # Custom wake word
-# Add near the top with other constants
-DEBUG_MODE = True  # Toggle this to enable/disable debug output
-# Add this with other constants at the top
-USE_VAD = True  # Toggle this to enable/disable VAD
-# Add this with other constants at the top
-USE_WAKE_WORD = False  # Toggle this to enable/disable wake word detection
 ########################################
 # Functions                            #
 ########################################
@@ -201,90 +192,17 @@ def calcElevation(distance):
                 return str(int(m * (distance - DISTANCES[i]) + MILS[i]))
 
 
-def record_audio_with_silero_vad():
-    if not USE_VAD:
-        print("\nRecording for 5 seconds...")
-        recording = sd.rec(int(RECORDING_DURATION * SAMPLE_RATE), 
-                         samplerate=SAMPLE_RATE, 
-                         channels=CHANNELS,
-                         dtype=np.int16)
-        sd.wait()
-        print("\nRecording complete!")
-        return recording
-        
-    print("\nRecording with Silero VAD...")
-    model = load_silero_vad()
-    recording = []
-    silence_duration = 0
-    speech_detected = False
-    
-    # Constants
-    SILENCE_THRESHOLD = 1.0
-    SPEECH_THRESHOLD = 0.5
-    VAD_SAMPLE_RATE = 16000
-    WHISPER_SAMPLE_RATE = 44100
-    VAD_FRAME_LENGTH = 512  # Minimum chunk size for Silero VAD
-    CHUNK_SIZE = 2048  # Larger recording chunk for better quality
-    MIN_RECORDING_LENGTH = WHISPER_SAMPLE_RATE * 0.5
-
+def record_audio():
+    print("\nRecording for 5 seconds...")
     try:
-        with sd.InputStream(
-            samplerate=WHISPER_SAMPLE_RATE,
-            channels=CHANNELS, 
-            dtype=np.int16,
-            blocksize=CHUNK_SIZE
-        ) as stream:
-            print("Listening... (speak now)")
-            audio_buffer = np.array([], dtype=np.float32)
-            
-            while True:
-                audio_chunk, _ = stream.read(CHUNK_SIZE)
-                recording.append(audio_chunk)
-                
-                # Downsample chunk for VAD processing
-                downsampled_chunk = signal.resample(
-                    audio_chunk, 
-                    int(len(audio_chunk) * VAD_SAMPLE_RATE / WHISPER_SAMPLE_RATE)
-                )
-                
-                # Add to buffer
-                audio_buffer = np.append(audio_buffer, downsampled_chunk)
-                
-                # Process complete VAD frames
-                while len(audio_buffer) >= VAD_FRAME_LENGTH:
-                    # Extract frame and convert to tensor
-                    vad_frame = audio_buffer[:VAD_FRAME_LENGTH]
-                    audio_buffer = audio_buffer[VAD_FRAME_LENGTH:]
-                    
-                    # Normalize and convert to tensor
-                    audio_tensor = torch.FloatTensor(vad_frame) / 32768.0
-                    
-                    # Check if speech is present
-                    speech_prob = model(audio_tensor, VAD_SAMPLE_RATE).item()
-                    
-                    if speech_prob > SPEECH_THRESHOLD:
-                        speech_detected = True
-                        silence_duration = 0
-                    else:
-                        silence_duration += VAD_FRAME_LENGTH / VAD_SAMPLE_RATE
-
-                # Stop conditions
-                total_audio_length = len(np.concatenate(recording))
-                if speech_detected and silence_duration >= SILENCE_THRESHOLD and total_audio_length > MIN_RECORDING_LENGTH:
-                    break
-                elif total_audio_length > WHISPER_SAMPLE_RATE * 30:
-                    print("\nMaximum recording length reached")
-                    break
-
-        # Process final recording
-        recorded_audio = np.concatenate(recording)
-        if not speech_detected or len(recorded_audio) < MIN_RECORDING_LENGTH:
-            print("\nNo speech detected or recording too short")
-            return None
-            
-        print("\nRecording complete!")
-        return recorded_audio
-
+        recording = sd.rec(
+            int(RECORDING_DURATION * SAMPLE_RATE),
+            samplerate=SAMPLE_RATE,
+            channels=CHANNELS,
+            dtype=np.float32
+        )
+        sd.wait()
+        return recording
     except Exception as e:
         print(f"\nError recording audio: {str(e)}")
         print("Please check your microphone settings and permissions.")
@@ -331,13 +249,6 @@ def transcribe_and_parse_audio(audio_file):
         with open(audio_file, "rb") as file:
             transcription = client.audio.transcriptions.create(
                 model="whisper-1",
-                prompt="""
-                When transcribing, numbers must always be seperated and not grouped together.
-                So if the user says, "New fire mission at foxtrot 5 7 2 1", the transcription should be "New fire mission at foxtrot 5, 7, 2, 1".
-                The transcription should never combine all the numbers into one number like "New fire mission at foxtrot 5721".
-                Always seperate numbers with commas and spaces.
-                After transcribing a phonetic alphabet word like "kilo" or "foxtrot", the rest of the transcriptions should be numbers. So 'for' should be the number '4'
-                """,
                 file=file,
                 response_format="text"
             )
@@ -354,9 +265,8 @@ def transcribe_and_parse_audio(audio_file):
                     Extract any grid coordinates mentioned (e.g. "A1K5K4K2").
                     So if the user says "New fire mission at foxtrot 5, 7, 2, 1", the coordinates should be "F5K7K2K1".
                     If the user says "Set target for indigo 11 k 1 3 6", the coordinates should be "I11K1K3K6".
-                    NEVER return coordinates without the K delimiter! So if the user says "Set target for kilo 241", the coordinates should NOT be "K241".
-                    If the user says "Set target for kilo 241", the coordinates SHOULD be "K2K4K1".
-                    If the user says "New fire mission on kilo 11 3 2", the coordinates SHOULD be "K11K3K2".
+                    NEVER return coordinates without the K delimiter! So if the user says "Set target for kilo 2 4 1", the coordinates should NOT be "K241".
+                    If the user says "Set target for kilo 2 4 1", the coordinates SHOULD be "K2K4K1".
                     """
                 },
                 {"role": "user", "content": transcription}
@@ -408,7 +318,7 @@ def handle_voice_command(is_wake_word=False):
         print("\nPress Enter to start recording...")
         input()
     
-    recording = record_audio_with_silero_vad()
+    recording = record_audio()
     if recording is None:
         return None, None
     
@@ -438,7 +348,7 @@ def target_loop():
     processing_thread = None
     audio_stream = None
     porcupine = None
-
+    
     def display_status():
         """Helper function to display current status"""
         clear()
@@ -446,14 +356,6 @@ def target_loop():
         print("        Squad AI Mortar Calculator      ")
         print("       by Miyamoto, Maggiefix, XXPX1    ")
         print("###########################################\n")
-        
-        # Add debug output section
-        if DEBUG_MODE and hasattr(display_status, 'last_transcription'):
-            print("\n--- Debug Information ---")
-            print(f"Last Transcription: {display_status.last_transcription}")
-            print(f"Parsed Command: {display_status.last_parsed_command}")
-            print("------------------------\n")
-
         if not input_arty and not input_target:
             print("> Jarvis is ONLINE and READY for your command! (Ctrl+C to quit)")
             print("\nJust say 'Hey Jarvis, set mortar position to foxtrot 3 2 1 4'")
@@ -461,9 +363,13 @@ def target_loop():
             print("\nInfinite subset possible like A1K2K5K7K9K8")
             print("You do not have to subset, A1K7 is totally fine!")
 
+        # if no arty position is set, show this message
         if not input_arty:
             print("\n> To begin, please tell me your current mortar location...")
+
+        # if no target position is set, show this message
      
+        # Show current positions if they exist
         if input_arty:
             print(f"\nCurrent Mortar Position: {input_arty[-1].replace(' ', '')}")
         if input_target:
@@ -471,6 +377,8 @@ def target_loop():
         if not input_target and input_arty:
             print("\nAwaiting fire mission coordinates...")
         
+        
+        # If both positions are set, show calculations
         if input_arty and input_target:
             x1, y1 = convert_input_to_coordiantes(input_arty)
             x2, y2 = convert_input_to_coordiantes(input_target)
@@ -485,103 +393,89 @@ def target_loop():
             print("###########################################")
             print("\nReady for new fire mission...")
     
-
     try:
+        # Initial setup code...
         load_dotenv()
-        if USE_WAKE_WORD:
-            porcupine_key = os.getenv('PORCUPINE_ACCESS_KEY')
-            if not porcupine_key:
-                print("Error: PORCUPINE_ACCESS_KEY not found in environment variables")
-                return
-                
-            porcupine = pvporcupine.create(
-                access_key=porcupine_key,
-                keywords=[WAKE_WORD]
-            )
+        porcupine_key = os.getenv('PORCUPINE_ACCESS_KEY')
+        if not porcupine_key:
+            print("Error: PORCUPINE_ACCESS_KEY not found in environment variables")
+            return
+            
+        porcupine = pvporcupine.create(
+            access_key=porcupine_key,
+            keywords=[WAKE_WORD]
+        )
         
-        while True:
-            try:
-                if USE_WAKE_WORD:
-                    # Create new audio stream for each iteration
-                    audio_stream = sd.InputStream(
-                        channels=1,
-                        samplerate=porcupine.sample_rate,
-                        dtype=np.int16,
-                        blocksize=porcupine.frame_length,
-                        callback=audio_callback
-                    )
-                    
-                    with audio_stream:
-                        display_status()
-                        audio_stream.start()
-                        
-                        # Start wake word detection thread
-                        wake_word_detected = False
-                        audio_queue = Queue()
+        audio_stream = sd.InputStream(
+            channels=1,
+            samplerate=porcupine.sample_rate,
+            dtype=np.int16,
+            blocksize=porcupine.frame_length,
+            callback=audio_callback
+        )
+        
+        with audio_stream:
+            # Display initial status
+            display_status()
+            audio_stream.start()
+            
+            while True:
+                try:
+                    # Start wake word detection thread if needed
+                    if not wake_word_detected and (processing_thread is None or not processing_thread.is_alive()):
                         processing_thread = threading.Thread(
                             target=process_audio_stream,
                             args=(porcupine, audio_queue)
                         )
                         processing_thread.start()
-                        
-                        # Wait for wake word detection
-                        while not wake_word_detected:
-                            time.sleep(0.1)
-                            if not processing_thread.is_alive():
-                                break
-                else:
-                    # Replace keyboard detection with simple input
-                    display_status()
-                    print("\nPress Enter to start voice command, or 'q' to quit...")
-                    user_input = input()
-                    if user_input.lower() == 'q':
-                        break
-                    wake_word_detected = True
-                
-                if wake_word_detected:
-                    # Clean up current audio stream if using wake word
-                    if USE_WAKE_WORD:
+                    
+                    # Check for wake word detection
+                    if wake_word_detected:
+                        print("\nWake word confirmed - stopping audio stream...")
                         audio_stream.stop()
                         audio_queue.queue.clear()
-                        if processing_thread.is_alive():
+                        
+                        if processing_thread and processing_thread.is_alive():
                             processing_thread.join(timeout=1.0)
-                    
-                    print("\nProcessing voice command...")
-                    recording = record_audio_with_silero_vad()
-                    
-                    if recording is not None:
-                        audio_file = save_recording(recording)
-                        parsed_command, transcription = transcribe_and_parse_audio(audio_file)
                         
-                        # Store debug information
-                        if DEBUG_MODE:
-                            display_status.last_transcription = transcription
-                            display_status.last_parsed_command = parsed_command
+                        print("Starting voice command recording...")
+                        recording = record_audio()
                         
-                        print(f"\nTranscribed: '{transcription}'")
-                        print(f"Parsed Command: {parsed_command}")
-                        
-                        if parsed_command.coordinates:
-                            coordinates_input = parsed_command.coordinates.strip().upper()
+                        if recording is not None:
+                            audio_file = save_recording(recording)
+                            print("Processing voice command...")
                             
-                            if parsed_command.intent == "setup_mortars":
-                                result = return_input_from_string(coordinates_input, description_2)
-                                if result and result[0] in letter_list:
-                                    input_arty = result
-                                    print("\nMortar position updated!")
-                            elif parsed_command.intent == "fire_mission":
-                                result = return_input_from_string(coordinates_input, description_3)
-                                if result and result[0] in letter_list:
-                                    input_target = result
-                                    print("\nTarget position updated!")
-                
-                # Reset wake word detection
-                wake_word_detected = False
-                
-            except KeyboardInterrupt:
-                print("\nQuitting...")
-                break
-
+                            parsed_command, transcription = transcribe_and_parse_audio(audio_file)
+                            print(f"\'{transcription}'")
+                            print(f"Intent: {parsed_command.intent}")
+                            
+                            if parsed_command.coordinates:
+                                coordinates_input = parsed_command.coordinates.strip().upper()
+                                print(f"Coordinates detected: {coordinates_input}")
+                                
+                                result = None
+                                if parsed_command.intent == "setup_mortars":
+                                    result = return_input_from_string(coordinates_input, description_2)
+                                    if result and result[0] in letter_list:
+                                        input_arty = result
+                                        print("\nMortar position updated!")
+                                elif parsed_command.intent == "fire_mission":
+                                    result = return_input_from_string(coordinates_input, description_3)
+                                    if result and result[0] in letter_list:
+                                        input_target = result
+                                        print("\nTarget position updated!")
+                                
+                                # Only update display after a successful command
+                                display_status()
+                        
+                        # print("\n Ready for further commands...")
+                        wake_word_detected = False
+                        audio_stream.start()
+                    
+                except KeyboardInterrupt:
+                    print("\nQuitting...")
+                    break
+                    
     except Exception as e:
         print(f"\nError in main loop: {e}")
         
@@ -596,6 +490,18 @@ def target_loop():
         if porcupine is not None:
             porcupine.delete()
 
-
+########################################
+# Inputs                               #
+########################################
+# User console-inputs
+print("####################################################")
+print("#             Squad AI Mortar Calculator           #")
+print("#                 by Miyamoto                    #")
+print("####################################################")
+print("# Input upper or lowercase like: A8K1 or c10k1k9   #")
+print("# Subset keypads with KX (X = 1 to 9) at the end.  #")
+print("# Infinite subset possible like A1K2K5K7K9K8       #")
+print("# You do not have to subset, A1K7 is totally fine! #")
+print("####################################################")
 target_loop()
 

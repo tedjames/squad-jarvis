@@ -47,11 +47,11 @@ CHANNELS = 1
 RECORDING_DURATION = 5
 WAKE_WORD = "jarvis"  # Custom wake word
 # Add near the top with other constants
-DEBUG_MODE = True  # Toggle this to enable/disable debug output
+DEBUG_MODE = False  # Toggle this to enable/disable debug output
 # Add this with other constants at the top
 USE_VAD = True  # Toggle this to enable/disable VAD
 # Add this with other constants at the top
-USE_WAKE_WORD = False  # Toggle this to enable/disable wake word detection
+USE_WAKE_WORD = True  # Toggle this to enable/disable wake word detection
 ########################################
 # Functions                            #
 ########################################
@@ -209,10 +209,10 @@ def record_audio_with_silero_vad():
                          channels=CHANNELS,
                          dtype=np.int16)
         sd.wait()
-        print("\nRecording complete!")
+        print("\nProcessing your command...")
         return recording
         
-    print("\nRecording with Silero VAD...")
+    # print("\nRecording with Silero VAD...")
     model = load_silero_vad()
     recording = []
     silence_duration = 0
@@ -234,7 +234,7 @@ def record_audio_with_silero_vad():
             dtype=np.int16,
             blocksize=CHUNK_SIZE
         ) as stream:
-            print("Listening... (speak now)")
+            print("\nListening... (speak now)")
             audio_buffer = np.array([], dtype=np.float32)
             
             while True:
@@ -282,7 +282,7 @@ def record_audio_with_silero_vad():
             print("\nNo speech detected or recording too short")
             return None
             
-        print("\nRecording complete!")
+        print("\nProcessing your command...")
         return recorded_audio
 
     except Exception as e:
@@ -395,7 +395,7 @@ def process_audio_stream(porcupine, audio_queue):
             keyword_index = porcupine.process(pcm)
             
             if keyword_index >= 0:
-                print("\nWake word detected!")
+                # print("\nWake word detected!")
                 wake_word_detected = True
                 return
                 
@@ -460,16 +460,15 @@ def target_loop():
             print("or 'Jarvis, fire mission at indigo 11 k 1 3 6'")
             print("\nInfinite subset possible like A1K2K5K7K9K8")
             print("You do not have to subset, A1K7 is totally fine!")
-
-        if not input_arty:
-            print("\n> To begin, please tell me your current mortar location...")
+            print("\n> To begin, please tell me your current mortar location...\n")
      
-        if input_arty:
+        if input_arty and input_target:
             print(f"\nCurrent Mortar Position: {input_arty[-1].replace(' ', '')}")
-        if input_target:
             print(f"Current Target Position: {input_target[-1].replace(' ', '')}")
+        if input_target and not input_arty:
+            print(f"\n> Fire mission set to {input_target[-1].replace(' ', '')}. Awaiting current mortar positions...")
         if not input_target and input_arty:
-            print("\nAwaiting fire mission coordinates...")
+            print(f"\n> Current mortar position set to {input_arty[-1].replace(' ', '')}. Awaiting fire mission...")
         
         if input_arty and input_target:
             x1, y1 = convert_input_to_coordiantes(input_arty)
@@ -483,7 +482,7 @@ def target_loop():
             print(f"         Azimuth   = {angle} °")
             print(f"         Elevation = {click} mil")
             print("###########################################")
-            print("\nReady for new fire mission...")
+            print("\n> Ready for new fire mission...")
     
 
     try:
@@ -546,7 +545,7 @@ def target_loop():
                         if processing_thread.is_alive():
                             processing_thread.join(timeout=1.0)
                     
-                    print("\nProcessing voice command...")
+                    # print("\nProcessing voice command...")
                     recording = record_audio_with_silero_vad()
                     
                     if recording is not None:

@@ -1,5 +1,8 @@
 # Squad AI Mortar Calculator aka JARVIS
 
+Be advised, this project is still under development. This has ONLY been tested on MacOS, and not on Windows.
+Please report issues here on Github if you run into any bugs!
+
 ## How to use
 
 This is a Python script that uses Picovoice, OpenAI Whisper and GPT-4o structured outputs to start listening/activate commands upon stating 'Jarvis' (or any compatible hotword), transcribe your voice and convert it into specific commands for a mortar calculator.
@@ -20,7 +23,9 @@ More coming soon!
 1. Setup poetry on your computer. More on that [here](https://python-poetry.org/docs/)
 2. Install dependencies with `poetry install`
 3. Set environment variables for OpenAI and Porcupine
-4. Run the script with `poetry run python src/main.py`
+4. Install sox and ffmpeg to your computer via brew install if you're on mac, or download from the website if you're on windows
+   (used for voice activity detection. disable VAD if you can't install sox and ffmpeg)
+5. Run the script with `poetry run python src/main.py`
 
 ## How to setup the environment variables
 
@@ -32,9 +37,17 @@ Porcupine is a wake word detection engine. You can get your Porcupine API key [h
 
 OpenAI is a large language model provider used to transcribe your voice to text and convert the text input into specific commands using JSON structured outputs. You can get your OpenAI API key [here](https://platform.openai.com/).
 
+## How to enable/disable features
+
+- To enable/disable wake word detection, change the `USE_WAKE_WORD` variable in `src/main.py` to `True` or `False`
+  (by disabling wake word detection, you will need to press enter to start a voice command)
+
+- To enable/disable voice activity detection, change the `USE_VAD` variable in `src/main.py` to `True` or `False`
+  (by disabling VAD, the script will always listen for 5 seconds and then process the audio)
+
 ## Future improvements
 
-- [ ] Instead of recording for 5 seconds, use VAD (voice activity detection) to detect when you're done talking and then process the audio
+- [x] Instead of recording for 5 seconds, use VAD (voice activity detection) to detect when you're done talking and then process the audio
 - [ ] Display previous elevation/azimuth values so it's easier to switch between two targets
 - [ ] Allow users to provide a primary and secondary target all in one command, like "Fire mission at F2 3 4 and F2 5 2". That way you can quickly switch between two targets.
 - [ ] Save the previous primary and secondary target positions so you can say, "Revert to previous fire mission"

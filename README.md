@@ -10,7 +10,7 @@
 
 1. Create a `.env` file in the root directory
 2. Copy the content of `.env.example` into the `.env` file
-3. Set the variables to your own API keys from OpenAI &
+3. Set the env variables to your own API keys from OpenAI & Porcupine
 
 Porcupine is a wake word detection engine. You can get your Porcupine API key [here](https://picovoice.ai/platform/porcupine/).
 

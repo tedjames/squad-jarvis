@@ -33,6 +33,7 @@ OpenAI is a large language model provider used to transcribe your voice to text 
 
 ## Future improvements
 
+- [ ] Instead of recording for 5 seconds, used VAD (voice activity detection) to detect when you're done talking and then process the audio
 - [ ] Display previous elevation/azimuth values so it's easier to switch between two targets
 - [ ] Allow users to provide a primary and secondary target all in one command, like "Fire mission at F2 3 4 and F2 5 2". That way you can quickly switch between two targets.
 - [ ] Save the previous primary and secondary target positions so you can say, "Revert to previous fire mission"

@@ -46,6 +46,10 @@ SAMPLE_RATE = 44100
 CHANNELS = 1
 RECORDING_DURATION = 5
 WAKE_WORD = "jarvis"  # Custom wake word
+
+## Available wake words:
+# grapefruit, alexa, ok google, picovoice, americano, computer, hey barista, hey siri, porcupine, hey google, blueberry, terminator, jarvis, pico clock, bumblebee, grasshopper
+
 # Add near the top with other constants
 DEBUG_MODE = False  # Toggle this to enable/disable debug output
 # Add this with other constants at the top
@@ -494,7 +498,7 @@ def display_status(input_arty=None, input_target=None, debug_info=None):
         print("\n> To begin, please tell me your current mortar location...\n")
  
     if input_arty and input_target:
-        print(f"\nCurrent Mortar Position: {input_arty[-1].replace(' ', '')}")
+        print(f"\n\nCurrent Mortar Position: {input_arty[-1].replace(' ', '')}")
         print("\n###########################################")
         # print(f"Current Target Position: {input_target[-1].replace(' ', '')}")
     if input_target and not input_arty:

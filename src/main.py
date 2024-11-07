@@ -52,6 +52,21 @@ DEBUG_MODE = False  # Toggle this to enable/disable debug output
 USE_VAD = True  # Toggle this to enable/disable VAD
 # Add this with other constants at the top
 USE_WAKE_WORD = True  # Toggle this to enable/disable wake word detection
+# Add this with other constants at the top
+calculationHistory = {
+    'current': {
+        'distance': None,
+        'angle': None,
+        'click': None,
+        'target': None
+    },
+    'previous': {
+        'distance': None,
+        'angle': None,
+        'click': None,
+        'target': None
+    }
+}
 ########################################
 # Functions                            #
 ########################################
@@ -402,6 +417,32 @@ def process_audio_stream(porcupine, audio_queue):
     except Exception as e:
         print(f"Error in audio processing: {e}")
 
+def calculate_fire_mission(input_arty, input_target):
+    """Calculate fire mission parameters and update history"""
+    global calculationHistory
+    
+    x1, y1 = convert_input_to_coordiantes(input_arty)
+    x2, y2 = convert_input_to_coordiantes(input_target)
+    angle = round(get_angle(x1, y1, x2, y2), 1)
+    distance = int(get_vektor(x1, y1, x2, y2))
+    click = calcElevation(distance)
+    current_target = input_target[-1].replace(' ', '')
+
+    # If we have a new target and existing calculations
+    if current_target != calculationHistory['current']['target'] and calculationHistory['current']['distance'] is not None:
+        # Move current to previous
+        calculationHistory['previous'] = calculationHistory['current'].copy()
+        
+    # Update current calculations
+    calculationHistory['current'] = {
+        'distance': distance,
+        'angle': angle,
+        'click': click,
+        'target': current_target
+    }
+    
+    return distance, angle, click
+
 def handle_voice_command(is_wake_word=False):
     clear()
     if not is_wake_word:
@@ -429,6 +470,58 @@ def handle_voice_command(is_wake_word=False):
     
     return None
 
+def display_status(input_arty=None, input_target=None, debug_info=None):
+    """Display current calculator status and results"""
+    clear()
+    print("\n###########################################")
+    print("        Squad AI Mortar Calculator      ")
+    print("       by Miyamoto, Maggiefix, XXPX1    ")
+    print("###########################################\n")
+    
+    # Add debug output section
+    if DEBUG_MODE and debug_info:
+        print("\n--- Debug Information ---")
+        print(f"Last Transcription: {debug_info.get('transcription', '')}")
+        print(f"Parsed Command: {debug_info.get('parsed_command', '')}")
+        print("------------------------\n")
+
+    if not input_arty and not input_target:
+        print("> Jarvis is ONLINE and READY for your command! (Ctrl+C to quit)")
+        print("\nJust say 'Hey Jarvis, set mortar position to foxtrot 3 2 1 4'")
+        print("or 'Jarvis, fire mission at indigo 11 k 1 3 6'")
+        print("\nInfinite subset possible like A1K2K5K7K9K8")
+        print("You do not have to subset, A1K7 is totally fine!")
+        print("\n> To begin, please tell me your current mortar location...\n")
+ 
+    if input_arty and input_target:
+        print(f"\nCurrent Mortar Position: {input_arty[-1].replace(' ', '')}")
+        print("\n###########################################")
+        # print(f"Current Target Position: {input_target[-1].replace(' ', '')}")
+    if input_target and not input_arty:
+        print(f"\n> Fire mission set to {input_target[-1].replace(' ', '')}. Awaiting current mortar positions...")
+    if not input_target and input_arty:
+        print(f"\n> Current mortar position set to {input_arty[-1].replace(' ', '')}. Awaiting fire mission...")
+    
+    if input_arty and input_target:
+        # Calculate new fire mission
+        distance, angle, click = calculate_fire_mission(input_arty, input_target)
+        
+        print(f"\nCurrent Target ({input_target[-1].replace(' ', '')}):")
+        print(f"         Distance  = {distance} m")
+        print(f"         Azimuth   = {angle} °")
+        print(f"         Elevation = {click} mil")
+        print("\n###########################################")
+        
+        # Display previous calculations if they exist
+        if calculationHistory['previous']['distance'] is not None:
+            print(f"\nPrevious Target ({calculationHistory['previous']['target']}):")
+            print(f"         Distance  = {calculationHistory['previous']['distance']} m")
+            print(f"         Azimuth   = {calculationHistory['previous']['angle']} °")
+            print(f"         Elevation = {calculationHistory['previous']['click']} mil")
+            print("\n###########################################")
+        
+        print("\n> Ready for new fire mission...")
+
 def target_loop():
     global wake_word_detected, audio_queue
     
@@ -438,52 +531,7 @@ def target_loop():
     processing_thread = None
     audio_stream = None
     porcupine = None
-
-    def display_status():
-        """Helper function to display current status"""
-        clear()
-        print("\n###########################################")
-        print("        Squad AI Mortar Calculator      ")
-        print("       by Miyamoto, Maggiefix, XXPX1    ")
-        print("###########################################\n")
-        
-        # Add debug output section
-        if DEBUG_MODE and hasattr(display_status, 'last_transcription'):
-            print("\n--- Debug Information ---")
-            print(f"Last Transcription: {display_status.last_transcription}")
-            print(f"Parsed Command: {display_status.last_parsed_command}")
-            print("------------------------\n")
-
-        if not input_arty and not input_target:
-            print("> Jarvis is ONLINE and READY for your command! (Ctrl+C to quit)")
-            print("\nJust say 'Hey Jarvis, set mortar position to foxtrot 3 2 1 4'")
-            print("or 'Jarvis, fire mission at indigo 11 k 1 3 6'")
-            print("\nInfinite subset possible like A1K2K5K7K9K8")
-            print("You do not have to subset, A1K7 is totally fine!")
-            print("\n> To begin, please tell me your current mortar location...\n")
-     
-        if input_arty and input_target:
-            print(f"\nCurrent Mortar Position: {input_arty[-1].replace(' ', '')}")
-            print(f"Current Target Position: {input_target[-1].replace(' ', '')}")
-        if input_target and not input_arty:
-            print(f"\n> Fire mission set to {input_target[-1].replace(' ', '')}. Awaiting current mortar positions...")
-        if not input_target and input_arty:
-            print(f"\n> Current mortar position set to {input_arty[-1].replace(' ', '')}. Awaiting fire mission...")
-        
-        if input_arty and input_target:
-            x1, y1 = convert_input_to_coordiantes(input_arty)
-            x2, y2 = convert_input_to_coordiantes(input_target)
-            angle = round(get_angle(x1, y1, x2, y2), 1)
-            distance = int(get_vektor(x1, y1, x2, y2))
-            click = calcElevation(distance)
-            
-            print("\n###########################################")
-            print(f"         Distance  = {distance} m")
-            print(f"         Azimuth   = {angle} °")
-            print(f"         Elevation = {click} mil")
-            print("###########################################")
-            print("\n> Ready for new fire mission...")
-    
+    debug_info = {}
 
     try:
         load_dotenv()
@@ -511,7 +559,7 @@ def target_loop():
                     )
                     
                     with audio_stream:
-                        display_status()
+                        display_status(input_arty, input_target, debug_info)
                         audio_stream.start()
                         
                         # Start wake word detection thread
@@ -530,7 +578,7 @@ def target_loop():
                                 break
                 else:
                     # Replace keyboard detection with simple input
-                    display_status()
+                    display_status(input_arty, input_target, debug_info)
                     print("\nPress Enter to start voice command, or 'q' to quit...")
                     user_input = input()
                     if user_input.lower() == 'q':
@@ -554,8 +602,10 @@ def target_loop():
                         
                         # Store debug information
                         if DEBUG_MODE:
-                            display_status.last_transcription = transcription
-                            display_status.last_parsed_command = parsed_command
+                            debug_info = {
+                                'transcription': transcription,
+                                'parsed_command': parsed_command
+                            }
                         
                         print(f"\nTranscribed: '{transcription}'")
                         print(f"Parsed Command: {parsed_command}")

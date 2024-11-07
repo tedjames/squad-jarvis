@@ -4,7 +4,7 @@
 
 1. Install the dependencies with `poetry install`
 2. Set the environment variables
-3. Run the script with `poetry run python squad_calc_ai/main.py`
+3. Run the script with `poetry run python src/main.py`
 
 ## How to setup the environment variables
 

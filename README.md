@@ -60,4 +60,4 @@ OpenAI is a large language model provider used to transcribe your voice to text 
 - [ ] Integrate TTS so the AI can talk back to the user and announce elevation/azimuth
 - [ ] Allow users to configure different hotwords via voice command
 - [ ] Run whisper locally instead of using the API
-- [ ] Allow users to disable hotword detection and just use the onboard microphone on click of a keyboard button while also allowing them to enter in coordinates manually
+- [x] Allow users to disable hotword detection and just use the onboard microphone on click of a keyboard button while also allowing them to enter in coordinates manually

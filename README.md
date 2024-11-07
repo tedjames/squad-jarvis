@@ -2,6 +2,21 @@
 
 ## How to use
 
+This is a Python script that uses an OpenAI Whisper and GPT-4o structured outputs to transcribe your voice and convert it into specific commands for a mortar calculator. Run the script and say "Jarvis" followed by a command.
+
+Just say something like,"Hey Jarvis, set mortar position to foxtrot 3 2 1 4" or "Jarvis, fire mission at indigo 11 k 1 3 6" and the script will set the mortar position or fire mission respectively.
+
+Infinite subsets are possible like A1K2K5K7K9K8 but you do not have to subset either, A1K7 is totally fine!
+
+Available commands:
+
+- "Setup mortar position at foxtrot 3 2 1 4" to set the mortar position
+- "New fire mission at F2 3 4" to set a mortar target with coordinates F2K3K4
+
+More coming soon!
+
+## How to install
+
 1. Install the dependencies with `poetry install`
 2. Set the environment variables
 3. Run the script with `poetry run python src/main.py`

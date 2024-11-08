@@ -3,6 +3,8 @@
 Be advised, this project is still under development. This has ONLY been tested on MacOS, and not on Windows.
 Please report issues here on Github if you run into any bugs!
 
+![image](./screenshot.png)
+
 ## How to use
 
 This is a Python script that uses Picovoice, OpenAI Whisper and GPT-4o structured outputs to start listening/activate commands upon stating 'Jarvis' (or any compatible hotword), transcribe your voice and convert it into specific commands for a mortar calculator.
@@ -15,6 +17,9 @@ Available commands:
 
 - "Setup mortar position at foxtrot 3 2 1 4" to set the mortar position
 - "New fire mission at F2 3 4" to set a mortar target with coordinates F2K3K4
+- "Save current target as Airfield" to save the current target with a custom name
+- "Delete Airfield target" to delete the Airfield target
+- "Delete all targets except Airfield" to delete all targets except for Airfield
 
 More coming soon!
 

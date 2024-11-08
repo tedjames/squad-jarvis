@@ -71,20 +71,6 @@ calculationHistory = {
         'target': None
     }
 }
-
-# Saved targets example:
-# saved_targets = {
-#     'target_name': {
-#         'distance': None,
-#         'angle': None,
-#         'click': None,
-#         'target': None
-#     }
-# }
-
-# Add this with other constants at the top
-saved_targets = {}  # Global dictionary to store saved targets
-
 ########################################
 # Functions                            #
 ########################################
@@ -355,7 +341,6 @@ def transcribe_and_parse_audio(audio_file):
         class VoiceCommand(BaseModel):
             intent: str
             coordinates: str | None
-            target_name: str | None
 
         # Load environment variables
         load_dotenv()
@@ -383,10 +368,8 @@ def transcribe_and_parse_audio(audio_file):
                 {
                     "role": "system", 
                     "content": """Extract the user's intent from their voice command for a mortar calculator.
-                    If they are trying to save a target, classify as "save_target", extract the "target_name" and do not return coordinates.
-                    If they are trying to delete a target, classify as "delete_target", extract the "target_name" and do not return coordinates.
-                    If they are trying to set up a mortar position, classify as "setup_mortars" and extract the coordinates.
-                    If they are calling in coordinates for a fire mission, classify as "fire_mission" and extract the coordinates.
+                    If they are trying to set up a mortar position, classify as "setup_mortars".
+                    If they are calling in coordinates for a fire mission, classify as "fire_mission".
                     Extract any grid coordinates mentioned (e.g. "A1K5K4K2").
                     So if the user says "New fire mission at foxtrot 5, 7, 2, 1", the coordinates should be "F5K7K2K1".
                     If the user says "Set target for indigo 11 k 1 3 6", the coordinates should be "I11K1K3K6".
@@ -451,6 +434,7 @@ def calculate_fire_mission(input_arty, input_target):
 
     # If we have a new target and existing calculations
     if current_target != calculationHistory['current']['target'] and calculationHistory['current']['distance'] is not None:
+        # Move current to previous
         calculationHistory['previous'] = calculationHistory['current'].copy()
         
     # Update current calculations
@@ -461,76 +445,7 @@ def calculate_fire_mission(input_arty, input_target):
         'target': current_target
     }
     
-    return distance, angle, click, current_target
-
-def save_target(input_arty, input_target, target_name):
-    """Save target calculations to saved_targets"""
-    global saved_targets
-    
-    if not input_arty or not input_target:
-        print("\nError: Cannot save target without mortar and target positions")
-        return False
-        
-    distance, angle, click, coords = calculate_fire_mission(input_arty, input_target)
-    
-    saved_targets[target_name.lower()] = {
-        'distance': distance,
-        'angle': angle,
-        'click': click,
-        'coords': coords
-    }
-    return True
-
-def delete_target(target_name):
-    """Delete a saved target using OpenAI to determine which targets to remove"""
-    global saved_targets
-    
-    class DeleteResponse(BaseModel):
-        targets_to_delete: list[str]
-
-    try:
-        client = OpenAI()
-        
-        completion = client.beta.chat.completions.parse(
-            model="gpt-4o-2024-08-06",
-            messages=[
-                {
-                    "role": "system", 
-                    "content": """You are managing a list of saved mortar targets.
-                    Return a JSON response with:
-                    1. 'targets_to_delete': array of target names (strings)that should be removed
-                    
-                    If asked to delete a specific target, return that target name if it exists.
-                    If asked to delete 'all' targets, return all target names.
-                    If target doesn't exist, return empty array.
-                    """
-                },
-                {
-                    "role": "user", 
-                    "content": f"Current targets: {list(saved_targets.keys())}\nDelete target name/command: {target_name}"
-                }
-            ],
-            response_format=DeleteResponse
-        )
-
-        # Parse the response
-        print(f"\nResponse from OpenAI: \n{completion.choices[0].message.content}\n")
-
-        response = DeleteResponse.model_validate_json(completion.choices[0].message.content)
-        
-        # Delete the specified targets
-        targets_deleted = False
-        for target in response.targets_to_delete:
-            if target.lower() in saved_targets:
-                del saved_targets[target.lower()]
-                targets_deleted = True
-        
-        print(f"\n{response.message}")
-        return targets_deleted
-
-    except Exception as e:
-        print(f"\nError processing target deletion: {e}")
-        return False
+    return distance, angle, click
 
 def handle_voice_command(is_wake_word=False):
     clear()
@@ -561,8 +476,7 @@ def handle_voice_command(is_wake_word=False):
 
 def display_status(input_arty=None, input_target=None, debug_info=None):
     """Display current calculator status and results"""
-    if not DEBUG_MODE:
-        clear()
+    clear()
     print("\n###########################################")
     print("        Squad AI Mortar Calculator      ")
     print("       by Miyamoto, Maggiefix, XXPX1    ")
@@ -594,9 +508,9 @@ def display_status(input_arty=None, input_target=None, debug_info=None):
     
     if input_arty and input_target:
         # Calculate new fire mission
-        distance, angle, click, current_target = calculate_fire_mission(input_arty, input_target)
+        distance, angle, click = calculate_fire_mission(input_arty, input_target)
         
-        print(f"\nCurrent Target ({current_target}):")
+        print(f"\nCurrent Target ({input_target[-1].replace(' ', '')}):")
         print(f"         Distance  = {distance} m")
         print(f"         Azimuth   = {angle} °")
         print(f"         Elevation = {click} mil")
@@ -610,17 +524,6 @@ def display_status(input_arty=None, input_target=None, debug_info=None):
             print(f"         Elevation = {calculationHistory['previous']['click']} mil")
             print("\n###########################################")
         
-        # Add saved targets section
-        if saved_targets:
-            print("\nSaved Targets:")
-            print("--------------")
-            for name, data in saved_targets.items():
-                print(f"{name}:")
-                print(f"         Coords    = {data['coords']}")
-                print(f"         Distance  = {data['distance']} m")
-                print(f"         Azimuth   = {data['angle']} °")
-                print(f"         Elevation = {data['click']} mil")
-            print("\n###########################################")
         print("\n> Ready for new fire mission...")
 
 def target_loop():
@@ -731,18 +634,6 @@ def target_loop():
             except KeyboardInterrupt:
                 print("\nQuitting...")
                 break
-
-            if parsed_command.intent == "save_target" and parsed_command.target_name:
-                if save_target(input_arty, input_target, parsed_command.target_name):
-                    print(f"\nTarget saved as '{parsed_command.target_name}'")
-                else:
-                    print("\nFailed to save target")
-                    
-            elif parsed_command.intent == "delete_target" and parsed_command.target_name:
-                if delete_target(parsed_command.target_name):
-                    print(f"\nTarget '{parsed_command.target_name}' deleted")
-                else:
-                    print(f"\nTarget '{parsed_command.target_name}' not found")
 
     except Exception as e:
         print(f"\nError in main loop: {e}")

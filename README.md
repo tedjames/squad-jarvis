@@ -1,13 +1,26 @@
-# Squad AI Mortar Calculator aka JARVIS
+# Squad AI Assistant aka JARVIS
 
-Be advised, this project is still under development. This has ONLY been tested on MacOS, and not on Windows.
-Please report issues here on Github if you run into any bugs!
+## a completely hands free, voice activated AI assistant for mortar calculations and other custom AI commands to be used in Squad - a modern military simulation PC game by OWI.
+
+_<small>Be advised, this project is still under development. This has ONLY been tested on MacOS, and not on Windows. This project is also not affiliated in any way with OWI (offworld industries) or any other companies.</small>_
+
+_<small>This is a personal project by Miyamoto (in-game name) and often used on the 7th Gothic server if you want to join and see it in action!</small>_
+
+**Please report issues here on Github if you run into any bugs!**
 
 ![image](./screenshot.png)
 
+## Core Features
+
+- Quickly calculate fire missions with coordinates using just your voice
+- Fire Mission Manager: Save current target with a custom name to view in a list of available targets. Uses AI to efficiently and easily manage a list of targets.
+- TTS (text to speech): Announces elevation, azimut and other useful information upon calculating a fire mission or executing a custom command.
+- VAD (voice activity detection): Detects when you're done talking and then processes your commands accordingly.
+- Wake word detection: Activate your AI assistant by saying "Jarvis" or any other compatible wake word (check out the README for more details)
+
 ## How to use
 
-This is a Python script that uses Picovoice, OpenAI Whisper and GPT-4o structured outputs to start listening/activate commands upon stating 'Jarvis' (or any compatible hotword), transcribe your voice and convert it into specific commands for a mortar calculator.
+This is a Python script that uses Picovoice, OpenAI Whisper and GPT-4o structured outputs to start listening/activate commands upon stating 'Jarvis' (or any compatible hotword), transcribe your voice and convert it into specific commands for a mortar calculator / generalized AI assistant for Squad.
 
 Just say something like,"Hey Jarvis, set mortar position to foxtrot 3 2 1 4" or "Jarvis, fire mission at indigo 11 1 3 6" and the script will set the mortar position or fire mission respectively.
 
@@ -21,7 +34,7 @@ Available commands:
 - "Delete Airfield target" to delete the Airfield target
 - "Delete all targets except Airfield" to delete all targets except for Airfield
 
-More coming soon!
+More commands coming soon!
 
 ## How to install
 
@@ -55,8 +68,8 @@ OpenAI is a large language model provider used to transcribe your voice to text 
 
 ## Future improvements
 
-- [ ] Integrate TTS so the AI can talk back to the user and announce elevation/azimuth
-- [ ] Run whisper locally instead of using the API
+- [ ] Option to run whisper locally instead of using the API
+- [x] Integrate TTS so the AI can talk back to the user and announce elevation/azimuth
 - [x] Instead of recording for 5 seconds, use VAD (voice activity detection) to detect when you're done talking and then process the audio
 - [x] Display previous elevation/azimuth values so it's easier to switch between two targets
 - [x] Allow users to save targets to a list

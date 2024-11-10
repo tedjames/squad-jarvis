@@ -429,11 +429,11 @@ def target_loop():
                         print(f"\nTranscribed: '{transcription}'")
                         print(f"Parsed Command: {parsed_command}")
 
-                        if parsed_command.intent == "insult":
-                            if DEBUG_MODE:
-                                print(f"\nInsult: {parsed_command.message}")
-                            start_tts(parsed_command.message)
-                            continue
+                        # if parsed_command.intent == "insult":
+                        #     if DEBUG_MODE:
+                        #         print(f"\nInsult: {parsed_command.message}")
+                        #     start_tts(parsed_command.message)
+                        #     continue
                         
                         if parsed_command.coordinates:
                             coordinates_input = parsed_command.coordinates.strip().upper()

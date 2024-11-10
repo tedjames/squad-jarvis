@@ -1,84 +1,62 @@
 #!/usr/bin/python
  # -*- coding: utf-8 -*-
-# Squad-Jarvis - AI Military Operations Assistant for Squad
-# Manages mortar missions with customizable AI voice commands
-# Original mortar calculator by /u/Maggiefix, [GER] Maggiefix and XXPX1
-# Voice activated AI assistant by Miyamoto
-
+# Squad Mortar Calculator-Script
+# by /u/Maggiefix | [GER] Maggiefix
+# with ideas and code from: XXPX1
 ########################################
 # Packages                             #
 ########################################
+import math
 import os
 import sounddevice as sd
+import scipy.io.wavfile as wav
 import numpy as np
+from datetime import datetime
 import time
 from dotenv import load_dotenv
 from openai import OpenAI
 from pydantic import BaseModel
 import pvporcupine
+import struct
 import threading
 from queue import Queue
-import warnings
-import sys
-import struct
-
-from src.mortar_calc import (
-    return_input_from_string,
-    calculate_fire_mission,
-    letter_list,
-    description_2,
-    description_3
-)
-from src.recording import (
-    record_audio_with_silero_vad,
-)
-from src.utils import (
-    format_coordinates,
-    clear
-)
-from src.audio_utils import (
-    save_recording
-)
-from src.tts import (
-    start_tts
-)
-
-
-
-# Ignore DeprecationWarning (hides annoying openai warning)
-warnings.filterwarnings("ignore", category=DeprecationWarning)
-
+import keyboard
+from silero_vad import load_silero_vad, read_audio, get_speech_timestamps
+import torch
+from scipy import signal  # For resampling
 ########################################
-# Constants                           #
+# Constantes                           #
 ########################################
+# Letters for X-axis
+letter_list = ["No", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"]
+# Numbers for Y-axis
+number_list = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26]
+# Distances from mortar interface
+DISTANCES = (50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900, 950, 1000, 1050, 1100, 1150,1200, 1250)
+# Milliradians from mortar interface
+MILS = (1579, 1558, 1538, 1517, 1496, 1475, 1453, 1431, 1409, 1387, 1364, 1341, 1317, 1292, 1267, 1240, 1212, 1183, 1152, 1118,1081, 1039, 988, 918, 800)
+# Map scale
+GRID_SIZE = 300
+DELIMITER = "K"
+description_1   = " Big-Grid-Scale  : "
+description_2   = " Mortar Position : "
+description_3   = " Target Position : "
+# Add these constants
 SAMPLE_RATE = 44100
 CHANNELS = 1
+RECORDING_DURATION = 5
+WAKE_WORD = "jarvis"  # Custom wake word
 
-# Load environment variables early
-load_dotenv()
+## Available wake words:
+# grapefruit, alexa, ok google, picovoice, americano, computer, hey barista, hey siri, porcupine, hey google, blueberry, terminator, jarvis, pico clock, bumblebee, grasshopper
 
-# Voice and Speech Features
-WAKE_WORD = os.getenv('WAKE_WORD', 'jarvis')
-DEBUG_MODE = os.getenv('DEBUG_MODE', 'true').lower() == 'true'
-USE_VAD = os.getenv('USE_VAD', 'true').lower() == 'true'
-USE_WAKE_WORD = os.getenv('USE_WAKE_WORD', 'true').lower() == 'true'
-WELCOME_TTS = os.getenv('WELCOME_TTS', 'false').lower() == 'true'
-
-# Validate required API keys
-if USE_WAKE_WORD and not os.getenv('PORCUPINE_ACCESS_KEY'):
-    print("Error: PORCUPINE_ACCESS_KEY not found in environment variables")
-    sys.exit(1)
-
-if not os.getenv('OPENAI_API_KEY'):
-    print("Error: OPENAI_API_KEY not found in environment variables")
-    sys.exit(1)
-
-# instantiate global state variables
-current_tts_thread = None
-wake_word_detected = False
-audio_queue = Queue()
-
-saved_targets = {} 
+# Add near the top with other constants
+DEBUG_MODE = False  # Toggle this to enable/disable debug output
+# Add this with other constants at the top
+USE_VAD = True  # Toggle this to enable/disable VAD
+# Add this with other constants at the top
+USE_WAKE_WORD = True  # Toggle this to enable/disable wake word detection
+# Add this with other constants at the top
 calculationHistory = {
     'current': {
         'distance': None,
@@ -94,27 +72,283 @@ calculationHistory = {
     }
 }
 
+# Saved targets example:
+# saved_targets = {
+#     'target_name': {
+#         'distance': None,
+#         'angle': None,
+#         'click': None,
+#         'target': None
+#     }
+# }
 
-def process_audio_stream(porcupine, audio_queue):
-    """Process audio stream for wake word detection"""
-    global wake_word_detected
-    
+# Add this with other constants at the top
+saved_targets = {}  # Global dictionary to store saved targets
+
+########################################
+# Functions                            #
+########################################
+def clear():
+    # For Windows
+    if os.name == 'nt':
+        os.system('cls')
+    # For Unix/Linux/MacOS
+    else:
+        os.system('clear')
+def return_input_from_string(u_input, description):
+    keypad_list = []
+    # control the user inputs
     try:
-        while not wake_word_detected:
-            audio_chunk = audio_queue.get()
-            if audio_chunk is None:
-                break
-                
-            pcm = struct.unpack_from("h" * porcupine.frame_length, audio_chunk)
-            keyword_index = porcupine.process(pcm)
+        # Read x-axis
+        x_value = u_input[0]
+
+        # Read remaining string split by K
+        zerlegt = list(map(int,u_input[1:].split(DELIMITER)))
+        # Read y-axis
+        y_value = int(zerlegt.pop(0))
+
+        # Checks if inputs are valid
+        # Checkl a-value
+        if x_value not in letter_list:
+
+            raise
+        # Check y-value
+        if y_value not in number_list:
+
+            raise
+        # Check keypad values
+        for item in zerlegt:
+
+            if int(item) > 9 or int(item) < 0:
+               raise
+            else:
+                keypad_list.append(item)
+        return x_value, y_value, keypad_list, u_input
+    except:
+        print(" Wrong input, use A1K1 or A10K9 or A1K1K5!")
+        u_input = str(input(description)).upper()
+        return return_input_from_string(u_input,description)
+def convert_input_to_coordiantes(input_tuple):
+  # Unpack input_tuple
+  x,y,keypad_list,string_input = input_tuple
+
+  x = int(ord(x.lower())-ord("a"))*GRID_SIZE
+  y = (y-1) * GRID_SIZE
+
+  # If no keypad is given
+  if not keypad_list:
+    x += GRID_SIZE / 2;
+    y += GRID_SIZE / 2;
+
+  # Get Keypad offsets
+  else:
+    keypadSize = GRID_SIZE
+    for element in keypad_list:
+      keypadSize /= 3 # Shrink keypad size by factor of 3
+      keypad = int(element)
+
+      # Add X Component of (Sub)Keypad\
+      if keypad == 2 or keypad == 5 or keypad == 8:
+        x += keypadSize
+      elif keypad == 3 or keypad == 6 or keypad == 9:
+        x += 2*keypadSize
+
+      # Add Y Component of (Sub)Keypad
+      if keypad == 4 or keypad == 5 or keypad == 6:
+        y += keypadSize
+      elif keypad == 1 or keypad == 2 or keypad == 3:
+        y += 2*keypadSize
+
+    # Center point in (Sub)Keypad
+    x += keypadSize / 2
+    y += keypadSize / 2
+
+  #print stringInput + " (" + str(int(round(x))) + ", " + str(int(round(y))) + ")"
+  return (x,y);
+def get_vektor(x1,y1,x2,y2):
+    #Verbindungsvektor berechnen
+    x_bind_vek = x1 - x2
+    y_bind_vek = y1 - y2
+    #Länge des Verktors berechnen
+    distance = math.sqrt(x_bind_vek**2 + y_bind_vek**2)
+    return distance
+def get_angle(x1,y1,x2,y2):
+    #Build north vektor on arty-position
+    nv_x = x1 - x1
+    nv_y = (y1-1) - y1
+    abs_nv = math.sqrt((nv_x ** 2) + (nv_y ** 2))
+    #Build Targetvektor
+    tv_x = x2 - x1
+    tv_y = y2 - y1
+    abs_tv = math.sqrt((tv_x ** 2) + (tv_y ** 2))
+    #Skalar between nv and tv
+    skalar = nv_x * tv_x + nv_y * tv_y
+
+    if x1 != x2 or y1 !=y2:
+        angle = math.degrees(math.acos(skalar/(abs_nv*abs_tv)))
+    # Shoot NE - QI
+    if x2 > x1 and y2 < y1:
+        angle = angle
+        #print("q1")
+    # Shoot NW - QII
+    elif x2 < x1 and y2 < y1:
+        angle = 360 - angle
+        #print("q2")
+    # Shoot SW - QIII
+    elif x2 < x1 and y2 > y1:
+        angle = 360 - angle
+        #print("q3")
+    # Shoot SE - QIV
+    elif x2 > x1 and y2 > y1:
+        angle = angle
+        #print("q4")
+    # Schoot direct North
+    elif x2 == x1 and y2 < y1:
+        angle = 0
+    # Schoot direct South
+    elif x2 == x1 and y2 > y1:
+        angle = 180
+    # Schoot direct East
+    elif x2 > x1 and y2 == y1:
+        angle = 90
+    # Schoot direct West
+    elif x2 < x1 and y2 == y1:
+        angle = 270
+    # Fail
+    else:
+        angle = 666
+    return angle
+def calcElevation(distance):
+    # by XXPX1
+    if distance < DISTANCES[0]:
+        return "Out of Range (<" + str(DISTANCES[0]) + "m)"
+    elif distance > DISTANCES[-1]:
+        return "Out of Range (>" + str(DISTANCES[-1]) + "m)"
+    else:
+        for i, value in enumerate(DISTANCES):
+            # print str(i) + "\t" + str(value) + "\t" + str(MILS[i])
+            if distance == value:
+                return str(MILS[i])
+            elif distance < value:
+                m = (MILS[i] - MILS[i - 1]) / (DISTANCES[i] - DISTANCES[i - 1]);
+                return str(int(m * (distance - DISTANCES[i]) + MILS[i]))
+
+
+def record_audio_with_silero_vad():
+    if not USE_VAD:
+        print("\nRecording for 5 seconds...")
+        recording = sd.rec(int(RECORDING_DURATION * SAMPLE_RATE), 
+                         samplerate=SAMPLE_RATE, 
+                         channels=CHANNELS,
+                         dtype=np.int16)
+        sd.wait()
+        print("\nProcessing your command...")
+        return recording
+        
+    # print("\nRecording with Silero VAD...")
+    model = load_silero_vad()
+    recording = []
+    silence_duration = 0
+    speech_detected = False
+    
+    # Constants
+    SILENCE_THRESHOLD = 1.0
+    SPEECH_THRESHOLD = 0.5
+    VAD_SAMPLE_RATE = 16000
+    WHISPER_SAMPLE_RATE = 44100
+    VAD_FRAME_LENGTH = 512  # Minimum chunk size for Silero VAD
+    CHUNK_SIZE = 2048  # Larger recording chunk for better quality
+    MIN_RECORDING_LENGTH = WHISPER_SAMPLE_RATE * 0.5
+
+    try:
+        with sd.InputStream(
+            samplerate=WHISPER_SAMPLE_RATE,
+            channels=CHANNELS, 
+            dtype=np.int16,
+            blocksize=CHUNK_SIZE
+        ) as stream:
+            print("\nListening... (speak now)")
+            audio_buffer = np.array([], dtype=np.float32)
             
-            if keyword_index >= 0:
-                # print("\nWake word detected!")
-                wake_word_detected = True
-                return
+            while True:
+                audio_chunk, _ = stream.read(CHUNK_SIZE)
+                recording.append(audio_chunk)
                 
+                # Downsample chunk for VAD processing
+                downsampled_chunk = signal.resample(
+                    audio_chunk, 
+                    int(len(audio_chunk) * VAD_SAMPLE_RATE / WHISPER_SAMPLE_RATE)
+                )
+                
+                # Add to buffer
+                audio_buffer = np.append(audio_buffer, downsampled_chunk)
+                
+                # Process complete VAD frames
+                while len(audio_buffer) >= VAD_FRAME_LENGTH:
+                    # Extract frame and convert to tensor
+                    vad_frame = audio_buffer[:VAD_FRAME_LENGTH]
+                    audio_buffer = audio_buffer[VAD_FRAME_LENGTH:]
+                    
+                    # Normalize and convert to tensor
+                    audio_tensor = torch.FloatTensor(vad_frame) / 32768.0
+                    
+                    # Check if speech is present
+                    speech_prob = model(audio_tensor, VAD_SAMPLE_RATE).item()
+                    
+                    if speech_prob > SPEECH_THRESHOLD:
+                        speech_detected = True
+                        silence_duration = 0
+                    else:
+                        silence_duration += VAD_FRAME_LENGTH / VAD_SAMPLE_RATE
+
+                # Stop conditions
+                total_audio_length = len(np.concatenate(recording))
+                if speech_detected and silence_duration >= SILENCE_THRESHOLD and total_audio_length > MIN_RECORDING_LENGTH:
+                    break
+                elif total_audio_length > WHISPER_SAMPLE_RATE * 30:
+                    print("\nMaximum recording length reached")
+                    break
+
+        # Process final recording
+        recorded_audio = np.concatenate(recording)
+        if not speech_detected or len(recorded_audio) < MIN_RECORDING_LENGTH:
+            print("\nNo speech detected or recording too short")
+            return None
+            
+        print("\nProcessing your command...")
+        return recorded_audio
+
     except Exception as e:
-        print(f"Error in audio processing: {e}")
+        print(f"\nError recording audio: {str(e)}")
+        print("Please check your microphone settings and permissions.")
+        return None
+
+def save_recording(recording):
+    # Create recordings directory if it doesn't exist
+    recordings_dir = "recordings"
+    os.makedirs(recordings_dir, exist_ok=True)
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"recording_{timestamp}.wav"
+    filepath = os.path.join(recordings_dir, filename)
+    wav.write(filepath, SAMPLE_RATE, recording)
+    return filepath
+
+def transcribe_audio(audio_file):
+    # Load environment variables
+    load_dotenv()
+
+    # OpenAI client will automatically use OPENAI_API_KEY from environment
+    client = OpenAI()
+    
+    with open(audio_file, "rb") as file:
+        transcription = client.audio.transcriptions.create(
+            model="whisper-1",
+            file=file,
+            response_format="text"
+        )
+    return transcription
+
 def transcribe_and_parse_audio(audio_file):
     try:
         # Define a Pydantic model for the response
@@ -122,7 +356,6 @@ def transcribe_and_parse_audio(audio_file):
             intent: str
             coordinates: str | None
             target_name: str | None
-            message: str | None
 
         # Load environment variables
         load_dotenv()
@@ -149,8 +382,7 @@ def transcribe_and_parse_audio(audio_file):
             messages=[
                 {
                     "role": "system", 
-                    "content": """Extract the user's intent from their voice command for a mortar calculator / AI military operations assistant tool.
-                    If they are trying to ask you for a creative insult, classify as "insult" and return a creative insult in the style of an angry military drill sergeant. Insults should sound and be framed like a mix of Deadpool and Donald J. Trump. Only classify as "insults" if you specifically see the word "insult" in my propmt.
+                    "content": """Extract the user's intent from their voice command for a mortar calculator.
                     If they are trying to save a target, classify as "save_target", extract the "target_name" and do not return coordinates.
                     If they are trying to delete a target, classify as "delete_target", extract the "target_name" and do not return coordinates.
                     If they are trying to set up a mortar position, classify as "setup_mortars" and extract the coordinates.
@@ -181,6 +413,56 @@ def audio_callback(indata, frames, time, status):
         print(f"Error: {status}")
     audio_queue.put(bytes(indata))
 
+# At top level
+wake_word_detected = False
+audio_queue = Queue()
+
+def process_audio_stream(porcupine, audio_queue):
+    """Process audio stream for wake word detection"""
+    global wake_word_detected
+    
+    try:
+        while not wake_word_detected:
+            audio_chunk = audio_queue.get()
+            if audio_chunk is None:
+                break
+                
+            pcm = struct.unpack_from("h" * porcupine.frame_length, audio_chunk)
+            keyword_index = porcupine.process(pcm)
+            
+            if keyword_index >= 0:
+                # print("\nWake word detected!")
+                wake_word_detected = True
+                return
+                
+    except Exception as e:
+        print(f"Error in audio processing: {e}")
+
+def calculate_fire_mission(input_arty, input_target):
+    """Calculate fire mission parameters and update history"""
+    global calculationHistory
+    
+    x1, y1 = convert_input_to_coordiantes(input_arty)
+    x2, y2 = convert_input_to_coordiantes(input_target)
+    angle = round(get_angle(x1, y1, x2, y2), 1)
+    distance = int(get_vektor(x1, y1, x2, y2))
+    click = calcElevation(distance)
+    current_target = input_target[-1].replace(' ', '')
+
+    # If we have a new target and existing calculations
+    if current_target != calculationHistory['current']['target'] and calculationHistory['current']['distance'] is not None:
+        calculationHistory['previous'] = calculationHistory['current'].copy()
+        
+    # Update current calculations
+    calculationHistory['current'] = {
+        'distance': distance,
+        'angle': angle,
+        'click': click,
+        'target': current_target
+    }
+    
+    return distance, angle, click, current_target
+
 def save_target(input_arty, input_target, target_name):
     """Save target calculations to saved_targets"""
     global saved_targets
@@ -189,7 +471,7 @@ def save_target(input_arty, input_target, target_name):
         print("\nError: Cannot save target without mortar and target positions")
         return False
         
-    distance, angle, click, coords = calculate_fire_mission(input_arty, input_target, calculationHistory)
+    distance, angle, click, coords = calculate_fire_mission(input_arty, input_target)
     
     saved_targets[target_name.lower()] = {
         'distance': distance,
@@ -197,9 +479,6 @@ def save_target(input_arty, input_target, target_name):
         'click': click,
         'coords': coords
     }
-    speech_text = f"Copy that! Target named, {target_name} has been saved! Over..."
-    start_tts(speech_text)
-        
     return True
 
 def delete_target(target_name):
@@ -235,8 +514,7 @@ def delete_target(target_name):
         )
 
         # Parse the response
-        if DEBUG_MODE:
-            print(f"\nResponse from OpenAI: \n{completion.choices[0].message.content}\n")
+        print(f"\nResponse from OpenAI: \n{completion.choices[0].message.content}\n")
 
         response = DeleteResponse.model_validate_json(completion.choices[0].message.content)
         
@@ -246,19 +524,40 @@ def delete_target(target_name):
             if target.lower() in saved_targets:
                 del saved_targets[target.lower()]
                 targets_deleted = True
-
-        # Convert array of deleted targets to comma-separated string
-        deleted_targets_str = ", ".join(response.targets_to_delete[:-1]) + " and " + response.targets_to_delete[-1] if len(response.targets_to_delete) > 1 else response.targets_to_delete[0] if response.targets_to_delete else ""
         
-        if DEBUG_MODE:
-            print(f"\n{response.message}")
-        speech_text = f"Copy that! {'Target' if len(response.targets_to_delete) == 1 else 'Targets'}, {deleted_targets_str} {'has' if len(response.targets_to_delete) == 1 else 'have'} been deleted! Over..."
-        start_tts(speech_text)
+        print(f"\n{response.message}")
         return targets_deleted
 
     except Exception as e:
         print(f"\nError processing target deletion: {e}")
         return False
+
+def handle_voice_command(is_wake_word=False):
+    clear()
+    if not is_wake_word:
+        print("\nPress Enter to start recording...")
+        input()
+    
+    recording = record_audio_with_silero_vad()
+    if recording is None:
+        return None, None
+    
+    audio_file = save_recording(recording)
+    print("\nTranscribing...")
+    parsed_command, transcription = transcribe_and_parse_audio(audio_file)
+    print(f"\nTranscribed text: {transcription}")
+    print(f"Detected intent: {parsed_command.intent}")
+    
+    if parsed_command.coordinates:
+        print(f"Detected coordinates: {parsed_command.coordinates}")
+        coordinates_input = parsed_command.coordinates.strip().upper()
+        
+        if parsed_command.intent == "setup_mortars":
+            return return_input_from_string(coordinates_input, description_2)
+        elif parsed_command.intent == "fire_mission":
+            return return_input_from_string(coordinates_input, description_3)
+    
+    return None
 
 def display_status(input_arty=None, input_target=None, debug_info=None):
     """Display current calculator status and results"""
@@ -283,43 +582,25 @@ def display_status(input_arty=None, input_target=None, debug_info=None):
         print("\nInfinite subset possible like A1K2K5K7K9K8")
         print("You do not have to subset, A1K7 is totally fine!")
         print("\n> To begin, please tell me your current mortar location...\n")
-        if WELCOME_TTS: 
-            start_tts("Jarvis is ONLINE and READY for your command! Over...")
  
-
+    if input_arty and input_target:
+        print(f"\n\nCurrent Mortar Position: {input_arty[-1].replace(' ', '')}")
+        print("\n###########################################")
+        # print(f"Current Target Position: {input_target[-1].replace(' ', '')}")
     if input_target and not input_arty:
-        status_text = f"Fire mission set to {format_coordinates(input_target)}. Awaiting current mortar positions! Over..."
-        print(f"\n> {status_text}")
-        status_text_phonetic = f"Fire mission set to {format_coordinates(input_target, convert_to_phonetic=True)}. Awaiting current mortar positions! Over..."
-        start_tts(status_text_phonetic)
+        print(f"\n> Fire mission set to {input_target[-1].replace(' ', '')}. Awaiting current mortar positions...")
     if not input_target and input_arty:
-        status_text = f"Current mortar position set to {format_coordinates(input_arty)}. Awaiting fire mission! Over..."
-        print(f"\n> {status_text}")
-        status_text_phonetic = f"Current mortar position set to {format_coordinates(input_arty, convert_to_phonetic=True)}. Awaiting fire mission! Over..."
-        start_tts(status_text_phonetic)
+        print(f"\n> Current mortar position set to {input_arty[-1].replace(' ', '')}. Awaiting fire mission...")
     
     if input_arty and input_target:
-        print(f"\n\nCurrent Mortar Position: {format_coordinates(input_arty)}")
-        print("\n###########################################")
-
         # Calculate new fire mission
-        distance, angle, click, current_target = calculate_fire_mission(input_arty, input_target, calculationHistory)
-      
+        distance, angle, click, current_target = calculate_fire_mission(input_arty, input_target)
+        
         print(f"\nCurrent Target ({current_target}):")
         print(f"         Distance  = {distance} m")
         print(f"         Azimuth   = {angle} °")
         print(f"         Elevation = {click} mil")
         print("\n###########################################")
-
-        # Generate speech for new calculations only if not handling save/delete commands
-        if debug_info and debug_info.get('parsed_command'):
-            parsed_command = debug_info['parsed_command']
-            if parsed_command.intent not in ['save_target', 'delete_target']:
-                # Convert float to string with one decimal place, then split into individual digits
-                angle_str = str(round(angle, 1)).replace('.', ' point ')
-                click_str = ", ".join(str(click))
-                speech_text = f"mortars are out of range by {int(distance - 1250)} meters!" if "Out of Range" in str(click) else f"Fire mission set! Azimuth {angle_str}. Elevation {click_str}. I repeat, azimuth {angle_str}. Elevation {click_str}."
-                start_tts(speech_text)
         
         # Display previous calculations if they exist
         if calculationHistory['previous']['distance'] is not None:
@@ -421,19 +702,14 @@ def target_loop():
                         parsed_command, transcription = transcribe_and_parse_audio(audio_file)
                         
                         # Store debug information
-                        debug_info = {
-                            'transcription': transcription,
-                            'parsed_command': parsed_command
-                        }
+                        if DEBUG_MODE:
+                            debug_info = {
+                                'transcription': transcription,
+                                'parsed_command': parsed_command
+                            }
                         
                         print(f"\nTranscribed: '{transcription}'")
                         print(f"Parsed Command: {parsed_command}")
-
-                        if parsed_command.intent == "insult":
-                            if DEBUG_MODE:
-                                print(f"\nInsult: {parsed_command.message}")
-                            start_tts(parsed_command.message)
-                            continue
                         
                         if parsed_command.coordinates:
                             coordinates_input = parsed_command.coordinates.strip().upper()

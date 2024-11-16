@@ -150,7 +150,6 @@ def transcribe_and_parse_audio(audio_file):
                 {
                     "role": "system", 
                     "content": """Extract the user's intent from their voice command for a mortar calculator / AI military operations assistant tool.
-                    If they are trying to ask you for a creative insult, classify as "insult" and return a creative insult in the style of an angry military drill sergeant. Insults should sound and be framed like a mix of Deadpool and Donald J. Trump. Only classify as "insults" if you specifically see the word "insult" in my propmt.
                     If they are trying to save a target, classify as "save_target", extract the "target_name" and do not return coordinates.
                     If they are trying to delete a target, classify as "delete_target", extract the "target_name" and do not return coordinates.
                     If they are trying to set up a mortar position, classify as "setup_mortars" and extract the coordinates.

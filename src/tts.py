@@ -10,11 +10,15 @@ import base64
 import json
 import websockets
 import threading
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # TTS Configuration
 USE_TTS = os.getenv('USE_TTS', 'true').lower() == 'true'
 USE_REALTIME_TTS = os.getenv('USE_REALTIME_TTS', 'true').lower() == 'true'
-REALTIME_TTS_ACCENT = os.getenv('REALTIME_TTS_ACCENT', 'British')
+ACCENT = os.getenv('ACCENT', 'Chinese')
+VOICE = os.getenv('VOICE', 'ash')
 USE_CHUNKED_TTS = os.getenv('USE_CHUNKED_TTS', 'false').lower() == 'true'
 
 
@@ -23,6 +27,7 @@ def text_to_speech(text: str):
     Convert text to speech using either regular or realtime TTS API
     """
     if USE_REALTIME_TTS:
+        print("Using realtime TTS")
         asyncio.run(realtime_tts(text))
     else:
         try:
@@ -88,11 +93,32 @@ async def realtime_tts(text: str):
                     "content": [
                         {
                             "type": "input_text",
-                            "text": f"Quickly and loudly yell the following text with urgency, clarity and in the style of a distressed military radio operator with a {REALTIME_TTS_ACCENT} accent: {text}"
+                            "text": f"Loudly and quickly yell the following text in English with a HEAVY {ACCENT} accent. <START TEXT TO BE SPOKEN> {text} <END TEXT TO BE SPOKEN> Remember to speak in English with a HEAVY {ACCENT} accent and speak fast!"
                         }
                     ]
                 }
             }
+
+            session_update_event = {
+                "type": "session.update",
+                "session": {
+                    "voice": f"{VOICE}",
+                }
+            }
+            
+            # event = {
+            #     "type": "response.create",
+            #     "response": {
+            #         "modalities": ["text", "audio"],
+            #         "instructions": f"Loudly and quickly yell the following text in English with a {ACCENT} accent. <START TEXT TO BE SPOKEN> {text} <END TEXT TO BE SPOKEN> Remember to speak in English with a {ACCENT} accent!",
+            #         "voice": "alloy",
+            #         'output_audio_format': "pcm_16",
+            #         "max_output_tokens": 2000,
+            #         "temperature": 0.7,
+            #     },
+            # }
+            print(event)
+            await ws.send(json.dumps(session_update_event))
             await ws.send(json.dumps(event))
             await ws.send(json.dumps({"type": "response.create"}))
 

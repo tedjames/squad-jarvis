@@ -117,7 +117,7 @@ async def realtime_tts(text: str):
             #         "temperature": 0.7,
             #     },
             # }
-            print(event)
+            # print(event)
             await ws.send(json.dumps(session_update_event))
             await ws.send(json.dumps(event))
             await ws.send(json.dumps({"type": "response.create"}))

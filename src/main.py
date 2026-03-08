@@ -18,7 +18,6 @@ from pydantic import BaseModel
 import pvporcupine
 import threading
 from queue import Queue
-import warnings
 import sys
 import struct
 
@@ -44,9 +43,6 @@ from src.tts import (
 )
 
 
-
-# Ignore DeprecationWarning (hides annoying openai warning)
-warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 ########################################
 # Constants                           #
@@ -131,35 +127,46 @@ def transcribe_and_parse_audio(audio_file):
         # First transcribe the audio
         with open(audio_file, "rb") as file:
             transcription = client.audio.transcriptions.create(
-                model="whisper-1",
+                model="gpt-4o-transcribe",
                 prompt="""
-                When transcribing, numbers must always be seperated and not grouped together.
-                So if the user says, "New fire mission at foxtrot 5 7 2 1", the transcription should be "New fire mission at foxtrot 5, 7, 2, 1".
-                The transcription should never combine all the numbers into one number like "New fire mission at foxtrot 5721".
-                Always seperate numbers with commas and spaces.
-                After transcribing a phonetic alphabet word like "kilo" or "foxtrot", the rest of the transcriptions should be numbers. So 'for' should be the number '4'
+                This is a military mortar calculator. Coordinates follow the format: phonetic letter, grid row number (1-26), then individual keypad digits (1-9).
+                The first number after the phonetic letter is a grid ROW and can be 1-26. Keep it as a single number (e.g. "eleven" = "11", "twenty" = "20"). Do NOT split it into separate digits.
+                All subsequent numbers are single keypad digits and should be separated with commas.
+                Examples:
+                - "alpha eleven two three" -> "alpha 11, 2, 3"
+                - "foxtrot 5 7 2 1" -> "foxtrot 5, 7, 2, 1"
+                - "kilo twenty one 4 5" -> "kilo 21, 4, 5"
+                After transcribing a phonetic alphabet word like "kilo" or "foxtrot", the rest of the transcription should be numbers. So 'for' should be the number '4'.
                 """,
                 file=file,
                 response_format="text"
             )
         
         # Then parse the transcription for intent
-        completion = client.beta.chat.completions.parse(
-            model="gpt-4o-2024-08-06",
+        completion = client.chat.completions.parse(
+            model="gpt-4.1-mini",
             messages=[
                 {
-                    "role": "system", 
+                    "role": "system",
                     "content": """Extract the user's intent from their voice command for a mortar calculator / AI military operations assistant tool.
                     If they are trying to save a target, classify as "save_target", extract the "target_name" and do not return coordinates.
                     If they are trying to delete a target, classify as "delete_target", extract the "target_name" and do not return coordinates.
                     If they are trying to set up a mortar position, classify as "setup_mortars" and extract the coordinates.
                     If they are calling in coordinates for a fire mission, classify as "fire_mission" and extract the coordinates.
-                    Extract any grid coordinates mentioned (e.g. "A1K5K4K2").
-                    So if the user says "New fire mission at foxtrot 5, 7, 2, 1", the coordinates should be "F5K7K2K1".
-                    If the user says "Set target for indigo 11 k 1 3 6", the coordinates should be "I11K1K3K6".
-                    NEVER return coordinates without the K delimiter! So if the user says "Set target for kilo 241", the coordinates should NOT be "K241".
-                    If the user says "Set target for kilo 241", the coordinates SHOULD be "K2K4K1".
-                    If the user says "New fire mission on kilo 11 3 2", the coordinates SHOULD be "K11K3K2".
+
+                    Coordinate format: {Letter}{GridRow}K{digit}K{digit}...
+                    - The letter is the NATO phonetic alphabet letter (alpha=A, bravo=B, charlie=C, etc.)
+                    - The grid row is the FIRST number after the letter and can be 1-26. It is NEVER split into separate digits. "eleven" = 11, not 1K1.
+                    - All subsequent numbers are single keypad digits (1-9), each separated by K.
+
+                    Examples:
+                    - "foxtrot 5, 7, 2, 1" -> "F5K7K2K1"
+                    - "alpha 11, 2, 3" -> "A11K2K3"
+                    - "charlie 11, 1, 8, 4" -> "C11K1K8K4"
+                    - "kilo 21, 4, 5" -> "K21K4K5"
+                    - "indigo 11, 1, 3, 6" -> "I11K1K3K6"
+
+                    NEVER return coordinates without the K delimiter between keypad digits.
                     """
                 },
                 {"role": "user", "content": transcription}
@@ -211,11 +218,11 @@ def delete_target(target_name):
     try:
         client = OpenAI()
         
-        completion = client.beta.chat.completions.parse(
-            model="gpt-4o-2024-08-06",
+        completion = client.chat.completions.parse(
+            model="gpt-4.1-mini",
             messages=[
                 {
-                    "role": "system", 
+                    "role": "system",
                     "content": """You are managing a list of saved mortar targets.
                     Return a JSON response with:
                     1. 'targets_to_delete': array of target names (strings)that should be removed

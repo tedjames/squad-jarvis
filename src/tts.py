@@ -20,6 +20,7 @@ USE_REALTIME_TTS = os.getenv('USE_REALTIME_TTS', 'true').lower() == 'true'
 ACCENT = os.getenv('ACCENT', 'Chinese')
 VOICE = os.getenv('VOICE', 'ash')
 USE_CHUNKED_TTS = os.getenv('USE_CHUNKED_TTS', 'false').lower() == 'true'
+ENABLE_VOICE_INSTRUCTIONS = os.getenv('ENABLE_VOICE_INSTRUCTIONS', 'false').lower() == 'true'
 
 
 def text_to_speech(text: str):
@@ -41,12 +42,16 @@ def text_to_speech(text: str):
             
             # Generate speech file
             client = OpenAI()
-            response = client.audio.speech.create(
-                model="tts-1",
-                voice="fable",
-                input=text
-            )
-            response.stream_to_file(str(speech_file)) # ignore deprecation warning
+            speech_params = {
+                "model": "gpt-4o-mini-tts",
+                "voice": VOICE,
+                "input": text,
+            }
+            if ENABLE_VOICE_INSTRUCTIONS:
+                speech_params["instructions"] = f"Speak in English with a HEAVY {ACCENT} accent. Speak loudly and fast, as if yelling."
+
+            with client.audio.speech.with_streaming_response.create(**speech_params) as response:
+                response.stream_to_file(str(speech_file))
             
             # Initialize pygame mixer
             os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
@@ -73,7 +78,7 @@ async def realtime_tts(text: str):
         text: Text to convert to speech
     """
     try:
-        url = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01"
+        url = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview"
         headers = {
             "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY')}",
             "OpenAI-Beta": "realtime=v1"
@@ -93,7 +98,7 @@ async def realtime_tts(text: str):
                     "content": [
                         {
                             "type": "input_text",
-                            "text": f"Loudly and quickly yell the following text in English with a HEAVY {ACCENT} accent. <START TEXT TO BE SPOKEN> {text} <END TEXT TO BE SPOKEN> Remember to speak in English with a HEAVY {ACCENT} accent and speak fast!"
+                            "text": f"Loudly and quickly yell the following text in English with a HEAVY {ACCENT} accent. <START TEXT TO BE SPOKEN> {text} <END TEXT TO BE SPOKEN> Remember to speak in English with a HEAVY {ACCENT} accent and speak fast!" if ENABLE_VOICE_INSTRUCTIONS else text
                         }
                     ]
                 }
@@ -102,8 +107,8 @@ async def realtime_tts(text: str):
             session_update_event = {
                 "type": "session.update",
                 "session": {
-                    "voice": f"{VOICE}",
-                }
+                    "voice": VOICE,
+                },
             }
             
             # event = {

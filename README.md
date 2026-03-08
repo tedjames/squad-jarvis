@@ -10,6 +10,10 @@ _<small>This is a personal project by Miyamoto (in-game name) and often used on 
 
 ![image](./screenshot.png)
 
+## Important Note on Voice Instructions
+
+Voice instructions for TTS (e.g. accents, yelling, impersonation) are **disabled by default**. AI models often refuse or inconsistently follow these instructions, resulting in the assistant saying things like "I can't speak with an accent" instead of reading the fire solution. If you'd like to experiment with them, set `ENABLE_VOICE_INSTRUCTIONS=true` in your `.env` file, but be aware the results may be unreliable.
+
 ## Core Features
 
 - Quickly calculate fire missions with coordinates using just your voice
